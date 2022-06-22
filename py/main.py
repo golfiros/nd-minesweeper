@@ -1,11 +1,23 @@
 import numpy as np 
+import sys
 from termcolor import colored
 
 # GLOBAL VARS: N, dim, density, board
 N = 10  # board size
 dim = 2 
 density = .25
-# TODO MAKE THIS A TERMINAL INPUT 
+
+usr = input('enter the board size N and density (in the format 10 .1): ')
+try: 
+  usr_parsed = usr.split(' ')
+  N = int(usr_parsed[0])
+  usr_density = float(usr_parsed[1])
+  if usr_density < 1: 
+    density = usr_density
+  else: 
+    print('fuck u, using default density')
+except: 
+  print('fuck u, using defaults')
 
 ###############################################################
 #####################  GENERATE A BOARD   #####################
@@ -24,12 +36,6 @@ print("  u [row #] [column #] : unflag coordinate")
 print("  s [row #] [column #] : shift torus to the right by [row #] and bottom by [column #]")
 print('%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%')
 
-# def get_board_iterator(): 
-#   # returns list of tuples with all coordinates
-#   N_linspace = np.linspace(0, N-1, N)
-#   board_iterator = np.array(np.meshgrid(*[N_linspace for d in range(dim)]),dtype=int).T.reshape(-1,dim)
-#   return list(map(tuple, board_iterator))
-
 def get_bombs_coords(): 
   # returns list of tuples with coordinates of flags
   return list(map(tuple, np.array(np.where(board > 0)).T))
@@ -43,21 +49,6 @@ def get_neighbours_coords(coordinate):
   neighbours_coords = list(map(tuple,neighbours_coords))
   return list(set(neighbours_coords) - {coordinate})
 
-# def num_flagged_neighbours(coordinate):  # tuple, np.array
-#   neighbours_coords = get_neighbours_coords(coordinate)
-#   # coord must be a tuple not an array
-#   neighbours_flagvals = np.array([board[coord] for coord in neighbours_coords if coord != coordinate])
-#   return np.sum(neighbours_flagvals > 0)
-
-# def get_marked_board_v1():
-#   # worse implementation than lower one
-#   markers = board * -1
-#   board_iterator = get_board_iterator()
-#   for coord in board_iterator:
-#     if markers[coord] != -1:
-#       markers[coord] = num_flagged_neighbours(coord)
-#   return markers
-
 def get_marked_board(bomb_coords): 
   markers = board * - 10 * N ** dim  # 3**dim should be enough
   for flag_coord in bomb_coords:
@@ -70,33 +61,32 @@ def get_marked_board(bomb_coords):
 #####################     AESTHETICS      #####################
 ###############################################################
 
-colors = {
-  1: 'blue',
-  2: 'green',
-  3: 'red',
-  4: 'magenta',
-  5: 'yellow',
-  6: 'cyan',
-  7: 'blue',
-  8: 'green'
+colors = { 
+  1: 'blue', 2: 'green', 3: 'red', 4: 'magenta', 5: 'yellow', 6: 'cyan', 7: 'blue', 8: 'green'
 }
 
-def prettify_helper(char, p = 1, f = 0): 
+def prettify_helper(char, p = 1, f = 0, d = 0): 
   # only for dim = 2
   if f == 1: return '⚑'  # '⚐' not saved in player known
   elif p == 0: return '■'
-  elif char < 0: return '⚑' 
+  elif char < 0 and d == 1: return '☠' 
+  elif char < 0: return '⚑'
   elif char == 0 and p != 0: return colored('☐', 'grey')
   else: return colored(str(char), colors[char])
 
-def prettify(markers, player = None, flags = None, shift = None): 
+def prettify(markers, player = None, flags = None, shift = None, died = None): 
+  # status: start game 0, during 1, end -1 
   # only for dim = 2
   if player is None: 
     player = np.ones_like(markers)
   if flags is None: 
     flags = np.zeros_like(markers)
-  if shift == None: 
-    shift = (0, 0)
+  if shift is None: 
+    shift = (0,0)
+  d = 1
+  if died is None: 
+    died = (0,0)
+    d = 0
   print('      '+' '.join(map(lambda i: str(i+1).ljust(2), list(range(N)))))
   print('   ┌'+'-'*(N * 3+2)+'┐')
   for i in range(len(markers)):
@@ -107,7 +97,8 @@ def prettify(markers, player = None, flags = None, shift = None):
     pretty_line = []
     for j in range(len(m_ln)): 
       j_shift = (j-shift[1]) % N
-      pretty_line.append(prettify_helper(m_ln[j_shift], p_ln[j_shift], f_ln[j_shift]))
+      d_pass = int(d and (i_shift == died[0]) and (j_shift == died[1]))
+      pretty_line.append(prettify_helper(m_ln[j_shift], p_ln[j_shift], f_ln[j_shift],d_pass))
     print(str(i+1).rjust(2)+' |  '+' '.join(map(lambda i: str(i)+' ', pretty_line))+' |')
   print('   └'+'-'*(N * 3+2)+'┘')
 
@@ -116,7 +107,6 @@ def prettify(markers, player = None, flags = None, shift = None):
 ###############################################################
 
 def open_zero(coordinate, player, markers):
-  # TODO DEBUG THIS 
   # return current player board w all 
   zeros_queue = [coordinate]
   visited = set(list(map(tuple, np.array(np.where(player == 1)).T )))
@@ -155,7 +145,7 @@ markers = get_marked_board(bomb_coords)
 flags = np.zeros_like(markers)
 player = get_player_board(markers)
 
-print('-'*int(N*1.5) + ' begin '+ '-'*int(N*1.5))
+# print('-'*int(N*1.5) + ' begin '+ '-'*int(N*1.5))
 prettify(markers, player, flags)
 
 alive = True
@@ -163,30 +153,25 @@ shift = (0,0)
 
 def update_player_move(alive, coordinate, player, bomb_coords, flags):
   new_player = player 
-  known_coords = list(map(tuple, np.array(np.where(player == 1)).T))
   zero_coords = list(map(tuple, np.array(np.where(markers == 0)).T))
   
   if flags[coordinate] == 1: 
-    print('no u flagged')
     return alive, new_player
 
   player[coordinate] = 1
+
   if coordinate in bomb_coords: 
-    print('u died')
+    print('>   u died')
     if dim == 2:  # 2D ONLY
-      prettify(markers, None, None, shift)
+      prettify(markers, None, None, shift, died=coordinate)
     return not alive, new_player
 
   # win condition: found all bombs
   elif np.size(player) - np.sum(player) == np.sum(board): 
-    print('wow u won!! crazy')
+    print('>   wow u won!! crazy')
     if dim == 2:  # 2D ONLY
       prettify(markers, None, None, shift)
     return not alive, new_player
-
-  elif coordinate in known_coords: 
-    print('bro u already know this')
-    return alive, new_player
   
   elif coordinate in zero_coords: 
     new_player = open_zero(coordinate, player, markers)
@@ -199,8 +184,9 @@ def flag_coord(coordinate, player):
   known_coords = list(map(tuple, np.array(np.where(player == 1)).T))
   if coordinate not in known_coords: 
     flags[coordinate] = 1
+    return 0
   else: 
-    print('bro u already know this')
+    return 1
 
 while(alive): 
   move_str = input("enter your move (in the format: row #  column #): ")
@@ -210,17 +196,23 @@ while(alive):
     move = tuple(map(lambda i: int(i) - 1, move_list[1:3]))
     shifted_move = ((move[0] - shift[0]) % N, (move[1] - shift[1]) % N)
     if command == 'f':  # flag
-      flag_coord(shifted_move, player)
+      was_known = flag_coord(shifted_move, player)
     elif command == 'u':  # unflag
       flags[shifted_move] = 0 
     elif command == 'o':  # open
       alive, player = update_player_move(alive, shifted_move, player, bomb_coords, flags)
     elif command == 's': # shift 
       shift = (shift[0] + move[0] + 1, shift[1] + move[1] + 1)
-    else: print('fuck u')
 
     if alive:
+      for _ in range(len(markers) + 4):
+        sys.stdout.write("\x1b[1A\x1b[2K")
+      # move snarky comments here bc otherwise they get erased
+      if command == 'f' and was_known:
+        print('>   bro u already know this')
+      elif command not in {'f', 'u', 'o', 's'}: 
+        print('>   bad command')
       prettify(markers,player,flags,shift)
 
   except:
-    print('u fucked up somehow try again')
+    print(' >   u fucked up somehow try again')
